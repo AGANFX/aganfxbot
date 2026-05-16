@@ -3,7 +3,7 @@ import logging
 import tempfile
 from PIL import Image
 
-from google import genai
+import google.genai as genai
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -29,12 +29,12 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing BOT_TOKEN or GEMINI_API_KEY")
 
 # =========================
-# GEMINI (NEW SDK)
+# GEMINI CLIENT (FIXED)
 # =========================
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # =========================
-# MENU UI
+# MENU
 # =========================
 menu = ReplyKeyboardMarkup(
     [
@@ -50,7 +50,7 @@ menu = ReplyKeyboardMarkup(
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 Smart Money Bot (Railway Ready)\n\nSend a chart image or use menu.",
+        "🚀 Smart Money Bot Ready\n\nSend a chart or use menu below.",
         reply_markup=menu
     )
 
@@ -66,7 +66,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# CHART ANALYSIS (GEMINI)
+# CHART ANALYSIS
 # =========================
 async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -125,31 +125,31 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "📊 Analyze Chart":
-        await update.message.reply_text("Send a chart image now 📸")
+        await update.message.reply_text("Send a chart screenshot 📸")
 
     elif text == "📈 Market Bias":
-        await update.message.reply_text("Send symbol: XAUUSD / BTCUSD / EURUSD")
+        await update.message.reply_text("Send symbol like XAUUSD / EURUSD / BTCUSD")
 
     elif text == "💰 Risk Rules":
         await update.message.reply_text(
             "💰 Risk Rules:\n"
             "- Risk 1–2% per trade\n"
             "- Always use Stop Loss\n"
-            "- Avoid overtrading\n"
-            "- Wait for BOS/CHOCH confirmation"
+            "- Wait for BOS/CHOCH\n"
+            "- Avoid overtrading"
         )
 
     elif text == "🧠 SMC Guide":
         await update.message.reply_text(
             "🧠 SMC Basics:\n"
-            "- BOS = trend continuation\n"
+            "- BOS = continuation\n"
             "- CHOCH = reversal\n"
             "- Liquidity = stop hunts\n"
-            "- Order blocks = entry zones"
+            "- Order blocks = entries"
         )
 
     else:
-        await update.message.reply_text("Use the menu below 👇", reply_markup=menu)
+        await update.message.reply_text("Use menu below 👇", reply_markup=menu)
 
 # =========================
 # PHOTO HANDLER
