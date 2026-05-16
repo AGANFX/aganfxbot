@@ -2,7 +2,8 @@ import os
 import logging
 import tempfile
 from PIL import Image
-import google.generativeai as genai
+
+from google import genai
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -16,13 +17,10 @@ from telegram.ext import (
 # =========================
 # LOGGING
 # =========================
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 
 # =========================
-# ENV KEYS (RAILWAY)
+# ENV KEYS
 # =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -31,19 +29,18 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing BOT_TOKEN or GEMINI_API_KEY")
 
 # =========================
-# GEMINI SETUP
+# GEMINI (NEW SDK)
 # =========================
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # =========================
-# MENU UI (VERSION 3)
+# MENU UI
 # =========================
 menu = ReplyKeyboardMarkup(
     [
         [KeyboardButton("📊 Analyze Chart"), KeyboardButton("📈 Market Bias")],
-        [KeyboardButton("💰 Risk Management"), KeyboardButton("🧠 SMC Guide")],
-        [KeyboardButton("ℹ Help"), KeyboardButton("🔄 Restart Bot")]
+        [KeyboardButton("💰 Risk Rules"), KeyboardButton("🧠 SMC Guide")],
+        [KeyboardButton("ℹ Help")]
     ],
     resize_keyboard=True
 )
@@ -53,8 +50,7 @@ menu = ReplyKeyboardMarkup(
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 Smart Money AI Bot v3\n\n"
-        "Send a chart or use the menu below.",
+        "🚀 Smart Money Bot (Railway Ready)\n\nSend a chart image or use menu.",
         reply_markup=menu
     )
 
@@ -66,12 +62,11 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📌 HOW TO USE:\n"
         "- Send chart screenshot 📸\n"
         "- Add caption like 'XAUUSD 15m'\n"
-        "- Get full SMC breakdown\n\n"
-        "⚠ Not financial advice"
+        "- Get SMC analysis"
     )
 
 # =========================
-# CHART ANALYSIS
+# CHART ANALYSIS (GEMINI)
 # =========================
 async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -82,35 +77,38 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
             path = tf.name
 
         await file.download_to_drive(path)
-        image = Image.open(path)
 
-        caption = update.message.caption or "Analyze this chart."
+        image = Image.open(path)
+        caption = update.message.caption or "Analyze this trading chart."
 
         prompt = f"""
-You are a professional Smart Money Concept (SMC) trader.
+You are a Smart Money Concept (SMC) trading analyst.
 
-Analyze the chart and give:
+Analyze the chart:
 
 1. Trend direction
 2. Market structure
-3. Support & resistance
+3. BOS / CHOCH
 4. Liquidity sweep
-5. BOS / CHOCH
+5. Support & resistance
 6. Entry idea
 7. Stop loss
 8. Take profit
-9. Confidence (0–100%)
+9. Confidence (0-100%)
 10. Risk warning
 
 User request:
 {caption}
 
 Rules:
-- No profit guarantees
-- Be realistic, not hype
+- No guaranteed profits
+- Be realistic
 """
 
-        response = model.generate_content([prompt, image])
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=[prompt, image]
+        )
 
         await update.message.reply_text(response.text)
 
@@ -118,7 +116,7 @@ Rules:
 
     except Exception as e:
         logging.error(e)
-        await update.message.reply_text("❌ Chart analysis failed. Try again.")
+        await update.message.reply_text("❌ Error analyzing chart.")
 
 # =========================
 # MENU HANDLER
@@ -127,33 +125,28 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "📊 Analyze Chart":
-        await update.message.reply_text("📸 Send a chart screenshot now.")
-    
-    elif text == "📈 Market Bias":
-        await update.message.reply_text(
-            "Send a pair like:\nXAUUSD / BTCUSD / EURUSD"
-        )
+        await update.message.reply_text("Send a chart image now 📸")
 
-    elif text == "💰 Risk Management":
+    elif text == "📈 Market Bias":
+        await update.message.reply_text("Send symbol: XAUUSD / BTCUSD / EURUSD")
+
+    elif text == "💰 Risk Rules":
         await update.message.reply_text(
             "💰 Risk Rules:\n"
             "- Risk 1–2% per trade\n"
-            "- Always use SL\n"
+            "- Always use Stop Loss\n"
             "- Avoid overtrading\n"
-            "- No revenge trading"
+            "- Wait for BOS/CHOCH confirmation"
         )
 
     elif text == "🧠 SMC Guide":
         await update.message.reply_text(
             "🧠 SMC Basics:\n"
             "- BOS = trend continuation\n"
-            "- CHOCH = trend reversal\n"
+            "- CHOCH = reversal\n"
             "- Liquidity = stop hunts\n"
-            "- Order Blocks = key zones"
+            "- Order blocks = entry zones"
         )
-
-    elif text == "🔄 Restart Bot":
-        await start(update, context)
 
     else:
         await update.message.reply_text("Use the menu below 👇", reply_markup=menu)
@@ -165,7 +158,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await analyze_chart(update, context)
 
 # =========================
-# MAIN
+# MAIN APP
 # =========================
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -175,6 +168,5 @@ app.add_handler(CommandHandler("help", help_cmd))
 app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
 
-print("🚀 Bot running...")
-
+print("🚀 Bot Running...")
 app.run_polling()
