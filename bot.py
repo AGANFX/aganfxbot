@@ -3,12 +3,12 @@ from telebot import types
 import requests
 import base64
 import os
-import time
-import logging
 from PIL import Image
 from dotenv import load_dotenv
 from datetime import datetime
 import random
+import threading
+import time
 
 # =========================
 # LOAD ENV
@@ -17,130 +17,89 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 if not BOT_TOKEN:
     raise Exception("BOT_TOKEN missing in .env")
 
-# =========================
-# LOGGING
-# =========================
-logging.basicConfig(level=logging.INFO)
-
-# =========================
-# BOT
-# =========================
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # =========================
-# USER COOLDOWN
-# =========================
-user_cooldowns = {}
-
-# =========================
-# ESCAPE MARKDOWN
-# =========================
-def escape_markdown(text):
-
-    escape_chars = r'\_*[]()~`>#+-=|{}.!'
-
-    for char in escape_chars:
-        text = text.replace(char, f'\\{char}')
-
-    return text
-
-# =========================
-# SESSION DETECTION
+# SESSION ENGINE
 # =========================
 def get_session():
-
     hour = datetime.utcnow().hour
 
     if 7 <= hour < 12:
         return "LONDON SESSION 🏦"
-
     elif 12 <= hour < 17:
         return "NEW YORK SESSION 🗽"
-
     else:
         return "ASIAN SESSION 🌏"
 
 # =========================
-# STRATEGY ENGINE
+# HYBRID STRATEGY ENGINE v3
 # =========================
 def strategy_engine():
-
     session = get_session()
 
-    volatility = random.choice([
-        "LOW",
-        "MEDIUM",
-        "HIGH"
-    ])
+    trend = random.choice(["BULLISH", "BEARISH", "RANGE"])
+    volatility = random.choice(["LOW", "MEDIUM", "HIGH"])
 
-    structure = random.choice([
-        "BULLISH 📈",
-        "BEARISH 📉",
-        "RANGE ⚠"
-    ])
+    score = 50
 
-    ema_bias = random.choice([
-        "EMA 20 ABOVE EMA 50",
-        "EMA 20 BELOW EMA 50"
-    ])
+    # session boost
+    if session == "NEW YORK SESSION 🗽":
+        score += 15
+    elif session == "LONDON SESSION 🏦":
+        score += 10
 
-    rsi = random.randint(35, 75)
-
-    if structure == "BULLISH 📈" and volatility != "LOW":
-
-        signal = "BUY SETUP ✅"
-        entry = "Demand zone retracement"
-        sl = "Below recent liquidity sweep"
-        tp = "1:2 RR / previous highs"
-        liquidity = "Buy-side liquidity targeted"
-        confidence = "78%"
-
-    elif structure == "BEARISH 📉" and volatility != "LOW":
-
-        signal = "SELL SETUP ✅"
-        entry = "Supply zone rejection"
-        sl = "Above recent liquidity sweep"
-        tp = "1:2 RR / previous lows"
-        liquidity = "Sell-side liquidity targeted"
-        confidence = "74%"
-
+    # trend logic
+    if trend == "BULLISH":
+        score += 15
+        direction = "BUY 📈"
+    elif trend == "BEARISH":
+        score += 15
+        direction = "SELL 📉"
     else:
+        score -= 10
+        direction = "NO TRADE ⚠"
 
+    # volatility filter
+    if volatility == "HIGH":
+        score += 10
+    elif volatility == "LOW":
+        score -= 10
+
+    # decision
+    if score >= 75:
+        signal = "STRONG SIGNAL 🔥"
+        expiry = "3–5 MIN (BINARY)"
+    elif score >= 60:
+        signal = "VALID SIGNAL ⚡"
+        expiry = "2–3 MIN"
+    else:
         signal = "NO TRADE ⚠"
-        entry = "Wait for confirmation"
-        sl = "N/A"
-        tp = "N/A"
-        liquidity = "Liquidity both sides"
-        confidence = "50%"
+        expiry = "-"
 
     return {
         "session": session,
+        "trend": trend,
         "volatility": volatility,
-        "trend": structure,
-        "ema": ema_bias,
-        "rsi": rsi,
+        "direction": direction,
+        "score": score,
         "signal": signal,
-        "entry": entry,
-        "sl": sl,
-        "tp": tp,
-        "liquidity": liquidity,
-        "confidence": confidence
+        "expiry": expiry
     }
 
 # =========================
-# AI ENGINE
+# AI ENGINE (OPTIONAL)
 # =========================
 def ai_engine(image_b64):
-
     if not OPENROUTER_API_KEY:
         return None
 
     try:
-
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json"
@@ -148,34 +107,21 @@ def ai_engine(image_b64):
 
         payload = {
             "model": "openai/gpt-4.1-mini",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": """
-You are a professional forex analyst.
-
-Analyze:
-- Trend
-- Liquidity
-- Smart money bias
-- Possible entry
-- Risk level
-
-Keep response short and professional.
-"""
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_b64}"
-                            }
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Analyze this forex chart: trend, entry, liquidity, smart money bias."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_b64}"
                         }
-                    ]
-                }
-            ]
+                    }
+                ]
+            }]
         }
 
         r = requests.post(
@@ -190,13 +136,11 @@ Keep response short and professional.
         if "choices" in data:
             return data["choices"][0]["message"]["content"]
 
-    except Exception as e:
-        logging.error(e)
-
-    return None
+    except:
+        return None
 
 # =========================
-# START
+# START MENU
 # =========================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -205,24 +149,23 @@ def start(message):
 
     markup.add(
         types.KeyboardButton("📊 Analyze Chart"),
-        types.KeyboardButton("📚 Strategy")
+        types.KeyboardButton("🚀 Generate Signal")
     )
-
     markup.add(
-        types.KeyboardButton("💎 Status"),
-        types.KeyboardButton("📞 Support")
+        types.KeyboardButton("📚 Strategy"),
+        types.KeyboardButton("💎 Status")
     )
 
     bot.send_message(
         message.chat.id,
         f"""
-🔥 AMUDANCE FX AI 🔥
+🔥 AMUDANCE FX PRO BOT v3 🔥
 
 Welcome {message.from_user.first_name}
 
-🧠 AI Engine: ACTIVE
-📊 Strategy Engine: ACTIVE
-🛡 Fallback System: ACTIVE
+🧠 Hybrid Engine: ACTIVE
+📊 Strategy System: ACTIVE
+⚡ Auto Signals: ACTIVE
 
 Send chart screenshot 📤
 """,
@@ -230,268 +173,115 @@ Send chart screenshot 📤
     )
 
 # =========================
-# MENU
+# MENU HANDLER
 # =========================
 @bot.message_handler(func=lambda m: True)
 def menu(m):
 
     if m.text == "📚 Strategy":
-
-        bot.send_message(
-            m.chat.id,
-            """
-📚 STRATEGY ENGINE
-
-✔ EMA Structure
-✔ Smart Money Concepts
-✔ Liquidity Sweeps
-✔ Trend Confirmation
-✔ Session Bias
-✔ Risk Reward Logic
-
-⚡ Hybrid AI + Strategy
-"""
-        )
+        bot.send_message(m.chat.id,
+        "Smart engine uses session + trend + volatility scoring")
 
     elif m.text == "💎 Status":
+        bot.send_message(m.chat.id,
+        "System ONLINE: Hybrid Engine v3 Running")
 
-        bot.send_message(
-            m.chat.id,
-            """
-🟢 SYSTEM STATUS
+    elif m.text == "🚀 Generate Signal":
+        strat = strategy_engine()
 
-AI Engine: READY
-Fallback Engine: ACTIVE
-Railway Server: ONLINE
-Protection System: ACTIVE
+        text = f"""
+🚀 MANUAL SIGNAL
 
-⚡ No Downtime Mode
+📊 {strat['direction']}
+📡 SCORE: {strat['score']}/100
+⏱ {strat['expiry']}
+🕒 {strat['session']}
 """
-        )
 
-    elif m.text == "📞 Support":
+        bot.send_message(m.chat.id, text)
 
-        bot.send_message(
-            m.chat.id,
-            """
-📞 SUPPORT
-
-Bot Name:
-AMUDANCE FX AI
-
-Version:
-Institutional Hybrid v5
-"""
-        )
+        if CHANNEL_ID:
+            bot.send_message(CHANNEL_ID, text)
 
     elif m.text == "📊 Analyze Chart":
-
-        bot.send_message(
-            m.chat.id,
-            """
-📤 Send chart screenshot.
-
-Best Results:
-✅ Clear candles
-✅ MT5 screenshots
-✅ Visible timeframe
-"""
-        )
+        bot.send_message(m.chat.id, "Send chart screenshot 📤")
 
 # =========================
-# IMAGE ANALYSIS
+# PHOTO HANDLER
 # =========================
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
 
+    msg = bot.send_message(message.chat.id, "🧠 Analyzing chart...")
+
     try:
+        file = bot.get_file(message.photo[-1].file_id)
+        downloaded = bot.download_file(file.file_path)
 
-        # =========================
-        # COOLDOWN
-        # =========================
-        user_id = message.from_user.id
-        current_time = time.time()
+        path = "chart.jpg"
+        with open(path, "wb") as f:
+            f.write(downloaded)
 
-        if user_id in user_cooldowns:
+        img = Image.open(path)
+        img.save(path, optimize=True, quality=60)
 
-            if current_time - user_cooldowns[user_id] < 20:
+        with open(path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode()
 
-                bot.send_message(
-                    message.chat.id,
-                    "⏳ Wait 20 seconds before next analysis."
-                )
-
-                return
-
-        user_cooldowns[user_id] = current_time
-
-        # =========================
-        # IMAGE SIZE LIMIT
-        # =========================
-        if message.photo[-1].file_size > 5 * 1024 * 1024:
-
-            bot.send_message(
-                message.chat.id,
-                "❌ Image too large."
-            )
-
-            return
-
-        # =========================
-        # LOADING
-        # =========================
-        loading = bot.send_message(
-            message.chat.id,
-            "🧠 Running institutional analysis..."
-        )
-
-        # =========================
-        # DOWNLOAD IMAGE
-        # =========================
-        file_info = bot.get_file(message.photo[-1].file_id)
-
-        downloaded_file = bot.download_file(file_info.file_path)
-
-        image_path = "chart.jpg"
-
-        with open(image_path, "wb") as f:
-            f.write(downloaded_file)
-
-        # =========================
-        # COMPRESS IMAGE
-        # =========================
-        img = Image.open(image_path)
-
-        img.save(
-            image_path,
-            optimize=True,
-            quality=60
-        )
-
-        # =========================
-        # BASE64
-        # =========================
-        with open(image_path, "rb") as image_file:
-
-            image_b64 = base64.b64encode(
-                image_file.read()
-            ).decode("utf-8")
-
-        # =========================
-        # STRATEGY ENGINE
-        # =========================
         strat = strategy_engine()
+        ai = ai_engine(img_b64)
 
-        # =========================
-        # AI ENGINE
-        # =========================
-        ai_result = ai_engine(image_b64)
+        result = f"""
+🔥 PRO SIGNAL v3 🔥
 
-        if ai_result:
-            ai_result = escape_markdown(ai_result)
-        else:
-            ai_result = "AI unavailable → fallback engine active"
+🕒 SESSION: {strat['session']}
+📊 TREND: {strat['trend']}
+⚡ VOL: {strat['volatility']}
 
-        # =========================
-        # FINAL RESULT
-        # =========================
-        final_text = f"""
-🔥 *AMUDANCE FX AI SIGNAL* 🔥
+📡 SCORE: {strat['score']}/100
+💡 SIGNAL: {strat['signal']}
+📈 DIR: {strat['direction']}
+⏱ EXPIRY: {strat['expiry']}
 
-🕒 *SESSION*
-{strat['session']}
-
-📊 *TREND*
-{strat['trend']}
-
-⚡ *VOLATILITY*
-{strat['volatility']}
-
-📈 *EMA BIAS*
-{strat['ema']}
-
-📉 *RSI*
-{strat['rsi']}
-
-💡 *SIGNAL*
-{strat['signal']}
-
-📍 *ENTRY*
-{strat['entry']}
-
-🛑 *STOP LOSS*
-{strat['sl']}
-
-🎯 *TAKE PROFIT*
-{strat['tp']}
-
-💧 *LIQUIDITY*
-{strat['liquidity']}
-
-📊 *CONFIDENCE*
-{strat['confidence']}
-
-🧠 *AI INSIGHT*
-{ai_result}
+🧠 AI:
+{ai if ai else "Fallback Engine Active"}
 
 ━━━━━━━━━━━━━━━
-
-⚠ Educational analysis only
-⚠ Not financial advice
-
-🛡 Institutional Hybrid Engine v5
+AMUDANCE FX SYSTEM
 """
 
-        bot.edit_message_text(
-            final_text,
-            message.chat.id,
-            loading.message_id,
-            parse_mode="Markdown"
-        )
+        bot.edit_message_text(result, message.chat.id, msg.message_id)
+
+        # AUTO POST TO CHANNEL
+        if CHANNEL_ID:
+            try:
+                bot.send_message(CHANNEL_ID, result)
+            except:
+                pass
 
     except Exception as e:
-
-        logging.error(e)
-
-        bot.send_message(
-            message.chat.id,
-            f"❌ Error:\n{e}"
-        )
+        bot.send_message(message.chat.id, str(e))
 
 # =========================
-# HELP
+# AUTO SIGNAL LOOP
 # =========================
-@bot.message_handler(commands=['help'])
-def help_command(message):
+def auto_loop():
+    while True:
+        try:
+            strat = strategy_engine()
 
-    bot.send_message(
-        message.chat.id,
-        """
-📖 COMMANDS
+            if strat["score"] >= 75 and CHANNEL_ID:
+                bot.send_message(CHANNEL_ID,
+                f"🚨 AUTO SIGNAL\n\n{strat['direction']} | {strat['score']}/100")
 
-/start → Start bot
-/help → Help menu
+            time.sleep(300)
+        except:
+            time.sleep(10)
 
-📤 Send screenshot for analysis.
-"""
-    )
+threading.Thread(target=auto_loop, daemon=True).start()
 
 # =========================
 # RUN BOT
 # =========================
-logging.info("INSTITUTIONAL HYBRID ENGINE v5 RUNNING...")
-
-while True:
-
-    try:
-
-        bot.infinity_polling(
-            timeout=60,
-            long_polling_timeout=60
-        )
-
-    except Exception as e:
-
-        logging.error(f"Polling Error: {e}")
-
-        time.sleep(10)
+print("AMUDANCE FX PRO BOT v3 RUNNING...")
+bot.infinity_polling()
