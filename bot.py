@@ -20,7 +20,7 @@ from telegram.ext import (
 logging.basicConfig(level=logging.INFO)
 
 # =========================
-# ENV KEYS
+# KEYS
 # =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -29,7 +29,7 @@ if not BOT_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing BOT_TOKEN or GEMINI_API_KEY")
 
 # =========================
-# GEMINI CLIENT (FIXED)
+# GEMINI
 # =========================
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -50,7 +50,7 @@ menu = ReplyKeyboardMarkup(
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 Smart Money Bot Ready\n\nSend a chart or use menu below.",
+        "🚀 Smart Money Bot Ready\nSend chart screenshot 📸",
         reply_markup=menu
     )
 
@@ -59,14 +59,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📌 HOW TO USE:\n"
-        "- Send chart screenshot 📸\n"
-        "- Add caption like 'XAUUSD 15m'\n"
-        "- Get SMC analysis"
+        "📌 Send a chart screenshot with caption like 'XAUUSD 15m'"
     )
 
 # =========================
-# CHART ANALYSIS
+# CHART ANALYSIS (FULLY FIXED)
 # =========================
 async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -78,36 +75,39 @@ async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await file.download_to_drive(path)
 
-        image = Image.open(path)
-        caption = update.message.caption or "Analyze this trading chart."
+        caption = update.message.caption or "Analyze this chart."
 
         prompt = f"""
-You are a Smart Money Concept (SMC) trading analyst.
+You are a Smart Money Concept trader.
 
-Analyze the chart:
-
-1. Trend direction
+Give:
+1. Trend
 2. Market structure
 3. BOS / CHOCH
-4. Liquidity sweep
-5. Support & resistance
-6. Entry idea
-7. Stop loss
-8. Take profit
-9. Confidence (0-100%)
-10. Risk warning
+4. Liquidity
+5. Entry
+6. SL
+7. TP
+8. Confidence %
+9. Risk warning
 
-User request:
+User:
 {caption}
-
-Rules:
-- No guaranteed profits
-- Be realistic
 """
+
+        # OPEN IMAGE SAFELY
+        with open(path, "rb") as f:
+            image_bytes = f.read()
 
         response = client.models.generate_content(
             model="gemini-1.5-flash",
-            contents=[prompt, image]
+            contents=[
+                prompt,
+                {
+                    "mime_type": "image/jpeg",
+                    "data": image_bytes
+                }
+            ]
         )
 
         await update.message.reply_text(response.text)
@@ -115,8 +115,12 @@ Rules:
         os.remove(path)
 
     except Exception as e:
-        logging.error(e)
-        await update.message.reply_text("❌ Error analyzing chart.")
+        logging.exception("BOT ERROR")
+        await update.message.reply_text(
+            "❌ Bot error occurred.\n\n"
+            "Reason:\n"
+            f"{str(e)}"
+        )
 
 # =========================
 # MENU HANDLER
@@ -128,44 +132,29 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Send a chart screenshot 📸")
 
     elif text == "📈 Market Bias":
-        await update.message.reply_text("Send symbol like XAUUSD / EURUSD / BTCUSD")
+        await update.message.reply_text("Send symbol: XAUUSD / BTCUSD")
 
     elif text == "💰 Risk Rules":
         await update.message.reply_text(
-            "💰 Risk Rules:\n"
-            "- Risk 1–2% per trade\n"
-            "- Always use Stop Loss\n"
-            "- Wait for BOS/CHOCH\n"
-            "- Avoid overtrading"
+            "💰 Risk:\n- 1–2% risk\n- Always SL\n- Wait BOS/CHOCH"
         )
 
     elif text == "🧠 SMC Guide":
         await update.message.reply_text(
-            "🧠 SMC Basics:\n"
-            "- BOS = continuation\n"
-            "- CHOCH = reversal\n"
-            "- Liquidity = stop hunts\n"
-            "- Order blocks = entries"
+            "SMC:\nBOS = continuation\nCHOCH = reversal\nLiquidity = stop hunts"
         )
 
     else:
-        await update.message.reply_text("Use menu below 👇", reply_markup=menu)
+        await update.message.reply_text("Use menu 👇", reply_markup=menu)
 
 # =========================
-# PHOTO HANDLER
-# =========================
-async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await analyze_chart(update, context)
-
-# =========================
-# MAIN APP
+# APP
 # =========================
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("help", help_cmd))
-
-app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+app.add_handler(MessageHandler(filters.PHOTO, analyze_chart))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
 
 print("🚀 Bot Running...")
