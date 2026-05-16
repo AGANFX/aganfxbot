@@ -1,143 +1,86 @@
 import telebot
 from telebot import types
-import google.generativeai as genai
-from dotenv import load_dotenv
-from PIL import Image
-from flask import Flask
-import threading
+from flask import Flask, request
+import requests
 import os
-from datetime import datetime
+import threading
+import logging
 
-# ==========================================
-# LOAD ENV
-# ==========================================
-load_dotenv()
+# =========================
+# LOGGING
+# =========================
+logging.basicConfig(level=logging.INFO)
 
+# =========================
+# ENV VARIABLES
+# =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+CHAT_ID = os.getenv("CHAT_ID")
 
 if not BOT_TOKEN:
-    raise Exception("BOT_TOKEN missing")
+    raise Exception("BOT_TOKEN is missing in Railway environment variables")
 
-if not GEMINI_API_KEY:
-    raise Exception("GEMINI_API_KEY missing")
+if not CHAT_ID:
+    raise Exception("CHAT_ID is missing in Railway environment variables")
 
-# ==========================================
-# GEMINI CONFIG
-# ==========================================
-genai.configure(api_key=GEMINI_API_KEY)
+CHAT_ID = int(CHAT_ID)
 
-model = genai.GenerativeModel("gemini-1.5-flash")
-
-# ==========================================
-# TELEGRAM BOT
-# ==========================================
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# ==========================================
-# FLASK APP (RAILWAY)
-# ==========================================
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "AMUDANCE INSTITUTIONAL AI RUNNING"
-
-# ==========================================
-# SESSION DETECTION
-# ==========================================
-def get_session():
-    hour = datetime.utcnow().hour
-
-    if 7 <= hour < 12:
-        return "LONDON SESSION 🏦"
-
-    elif 12 <= hour < 17:
-        return "NEW YORK SESSION 🗽"
-
-    else:
-        return "ASIAN SESSION 🌏"
-
-# ==========================================
-# START MENU
-# ==========================================
+# =========================
+# START COMMAND
+# =========================
 @bot.message_handler(commands=['start'])
 def start(message):
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
 
-    btn1 = types.KeyboardButton("📊 Analyze Chart")
-    btn2 = types.KeyboardButton("📚 Strategy")
-    btn3 = types.KeyboardButton("💎 Status")
-    btn4 = types.KeyboardButton("📞 Support")
+    markup.add(
+        types.KeyboardButton("📊 TradingView Signal"),
+        types.KeyboardButton("📈 MT5 Signal")
+    )
 
-    markup.add(btn1, btn2)
-    markup.add(btn3, btn4)
-
-    welcome = f"""
-🔥 AMUDANCE INSTITUTIONAL AI 🔥
-
-Welcome {message.from_user.first_name}
-
-✅ MT5 Analysis
-✅ Binary Options Analysis
-✅ Smart Money Concepts
-✅ Liquidity Detection
-✅ Trend Analysis
-✅ AI Chart Reading
-
-📤 Send chart screenshot now
-"""
+    markup.add(
+        types.KeyboardButton("💎 Status"),
+        types.KeyboardButton("📞 Support")
+    )
 
     bot.send_message(
         message.chat.id,
-        welcome,
+        """
+🔥 AMUDANCE TRADING BOT 🔥
+
+✅ TradingView Alerts
+✅ MT5 Signals
+✅ Auto Telegram Posting
+✅ Railway Hosting
+
+Bot is LIVE ⚡
+""",
         reply_markup=markup
     )
 
-# ==========================================
-# MENU SYSTEM
-# ==========================================
+# =========================
+# MENU HANDLER
+# =========================
 @bot.message_handler(func=lambda m: True)
-def menu_handler(message):
+def menu(message):
 
-    if message.text == "📚 Strategy":
+    if message.text == "💎 Status":
 
-        text = """
-📚 STRATEGY ENGINE
-
-✅ Smart Money Concepts
-✅ Liquidity Sweeps
-✅ Trend Continuation
-✅ BOS Confirmation
-✅ RSI + EMA Bias
-✅ Binary Options Timing
-✅ MT5 Scalping Logic
-
-Best Timeframes:
-• M1
-• M5
-• M15
-• H1
-"""
-
-        bot.send_message(message.chat.id, text)
-
-    elif message.text == "💎 Status":
-
-        text = """
+        bot.send_message(
+            message.chat.id,
+            """
 🟢 SYSTEM STATUS
 
-AI Engine: ONLINE
-Gemini Vision: ACTIVE
-Railway Server: RUNNING
-Signal Engine: READY
+TradingView Webhook: ACTIVE
+Telegram Signals: ACTIVE
+Railway Server: ONLINE
 
-⚡ Institutional AI v6
+⚡ AMUDANCE ENGINE RUNNING
 """
-
-        bot.send_message(message.chat.id, text)
+        )
 
     elif message.text == "📞 Support":
 
@@ -146,171 +89,56 @@ Signal Engine: READY
             """
 📞 SUPPORT
 
-Creator: Mr. Intellect
-Bot: AMUDANCE INSTITUTIONAL AI
-Version: v6
+Creator: AMUDANCE FX BOT
+Version: v1.0
 """
         )
 
-    elif message.text == "📊 Analyze Chart":
-
-        bot.send_message(
-            message.chat.id,
-            """
-📤 SEND TRADING SCREENSHOT
-
-Best Results:
-✅ Clear candles
-✅ TradingView screenshots
-✅ MT5 screenshots
-✅ Visible timeframe
-"""
-        )
-
-# ==========================================
-# IMAGE ANALYSIS
-# ==========================================
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-
-    loading = bot.send_message(
-        message.chat.id,
-        "🧠 Gemini AI analyzing chart..."
-    )
+# =========================
+# WEBHOOK (TRADINGVIEW)
+# =========================
+@app.route('/webhook', methods=['POST'])
+def webhook():
 
     try:
+        data = request.get_json(force=True)
 
-        # DOWNLOAD IMAGE
-        file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded = bot.download_file(file_info.file_path)
+        pair = data.get("pair", "UNKNOWN")
+        signal = data.get("signal", "NONE")
+        entry = data.get("entry", "N/A")
+        sl = data.get("sl", "N/A")
+        tp = data.get("tp", "N/A")
+        timeframe = data.get("timeframe", "N/A")
+        confidence = data.get("confidence", "N/A")
 
-        image_path = "chart.jpg"
+        message = f"""
+🔥 AMUDANCE FX SIGNAL 🔥
 
-        with open(image_path, "wb") as f:
-            f.write(downloaded)
-
-        image = Image.open(image_path)
-
-        # SESSION
-        session = get_session()
-
-        # ==========================================
-        # GEMINI PROMPT
-        # ==========================================
-        prompt = f"""
-You are a professional institutional forex and binary options analyst.
-
-Analyze this trading chart professionally.
-
-Give:
-1. Trend Direction
-2. Buy or Sell
-3. Entry Zone
-4. Stop Loss
-5. Take Profit
-6. Market Structure
-7. Liquidity Information
-8. Confidence Percentage
-9. Binary Options Direction
-10. Scalping Opportunity
-
-Use clean formatting with emojis.
-
-Session:
-{session}
-
-Do NOT say "cannot analyze".
-
-Give direct analysis.
-"""
-
-        # ==========================================
-        # GEMINI ANALYSIS
-        # ==========================================
-        response = model.generate_content(
-            [prompt, image]
-        )
-
-        ai_result = response.text
-
-        # ==========================================
-        # FINAL MESSAGE
-        # ==========================================
-        final = f"""
-🔥 AMUDANCE FX AI SIGNAL 🔥
-
-🕒 SESSION
-{session}
-
-{ai_result}
+📊 PAIR: {pair}
+💡 SIGNAL: {signal}
+📍 ENTRY: {entry}
+🛑 STOP LOSS: {sl}
+🎯 TAKE PROFIT: {tp}
+🕒 TIMEFRAME: {timeframe}
+📊 CONFIDENCE: {confidence}
 
 ━━━━━━━━━━━━━━━
-
-⚡ Gemini Institutional AI
-📊 MT5 + Binary Options
-🤖 AI Vision Analysis
+⚡ TradingView Auto Bot
 """
 
-        # SEND TO USER
-        bot.edit_message_text(
-            final,
-            message.chat.id,
-            loading.message_id
-        )
+        bot.send_message(CHAT_ID, message)
 
-        # AUTO POST CHANNEL
-        if CHANNEL_ID:
-
-            try:
-                bot.send_message(CHANNEL_ID, final)
-
-            except:
-                pass
+        return {"status": "success"}
 
     except Exception as e:
+        return {"error": str(e)}
 
-        bot.edit_message_text(
-            f"❌ Error:\n{e}",
-            message.chat.id,
-            loading.message_id
-        )
-
-# ==========================================
-# HELP COMMAND
-# ==========================================
-@bot.message_handler(commands=['help'])
-def help_command(message):
-
-    help_text = """
-📖 COMMANDS
-
-/start - Start bot
-/help - Show commands
-
-📤 Send trading screenshot for AI analysis.
-"""
-
-    bot.send_message(message.chat.id, help_text)
-
-# ==========================================
-# RUN TELEGRAM
-# ==========================================
+# =========================
+# RUN BOT + FLASK
+# =========================
 def run_bot():
-    print("AMUDANCE INSTITUTIONAL AI RUNNING...")
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    bot.infinity_polling()
 
-# ==========================================
-# RUN FLASK
-# ==========================================
-def run_web():
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080))
-    )
-
-# ==========================================
-# START BOTH
-# ==========================================
 threading.Thread(target=run_bot).start()
 
-run_web()
+app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
