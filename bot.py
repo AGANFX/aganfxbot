@@ -1,161 +1,130 @@
-import os
-import logging
-import tempfile
+import telebot
+from telebot import types
 from PIL import Image
+from google import genai
+import os
 
-import google.genai as genai
-
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
-
-# =========================
-# LOGGING
-# =========================
-logging.basicConfig(level=logging.INFO)
-
-# =========================
-# KEYS
-# =========================
+# ======================
+# KEYS (USE ENV ON RAILWAY)
+# ======================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_KEY = os.getenv("GEMINI_KEY")
 
-if not BOT_TOKEN or not GEMINI_API_KEY:
-    raise ValueError("Missing BOT_TOKEN or GEMINI_API_KEY")
+if not BOT_TOKEN or not GEMINI_KEY:
+    raise ValueError("Missing BOT_TOKEN or GEMINI_KEY")
 
-# =========================
-# GEMINI
-# =========================
-client = genai.Client(api_key=GEMINI_API_KEY)
+# ======================
+# INIT
+# ======================
+bot = telebot.TeleBot(BOT_TOKEN)
+client = genai.Client(api_key=GEMINI_KEY)
 
-# =========================
+# ======================
 # MENU
-# =========================
-menu = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton("📊 Analyze Chart"), KeyboardButton("📈 Market Bias")],
-        [KeyboardButton("💰 Risk Rules"), KeyboardButton("🧠 SMC Guide")],
-        [KeyboardButton("ℹ Help")]
-    ],
-    resize_keyboard=True
-)
+# ======================
+def main_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row("📊 Analyze Chart", "📈 Market Bias")
+    markup.row("💰 Risk Rules", "🧠 SMC Guide")
+    return markup
 
-# =========================
+# ======================
 # START
-# =========================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🚀 Smart Money Bot Ready\nSend chart screenshot 📸",
-        reply_markup=menu
+# ======================
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(
+        message.chat.id,
+        "🚀 Smart Money Bot Ready\n\nSend a chart screenshot 📊",
+        reply_markup=main_menu()
     )
 
-# =========================
-# HELP
-# =========================
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📌 Send a chart screenshot with caption like 'XAUUSD 15m'"
-    )
-
-# =========================
-# CHART ANALYSIS (FULLY FIXED)
-# =========================
-async def analyze_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        photo = update.message.photo[-1]
-        file = await context.bot.get_file(photo.file_id)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tf:
-            path = tf.name
-
-        await file.download_to_drive(path)
-
-        caption = update.message.caption or "Analyze this chart."
-
-        prompt = f"""
-You are a Smart Money Concept trader.
-
-Give:
-1. Trend
-2. Market structure
-3. BOS / CHOCH
-4. Liquidity
-5. Entry
-6. SL
-7. TP
-8. Confidence %
-9. Risk warning
-
-User:
-{caption}
-"""
-
-        # OPEN IMAGE SAFELY
-        with open(path, "rb") as f:
-            image_bytes = f.read()
-
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=[
-                prompt,
-                {
-                    "mime_type": "image/jpeg",
-                    "data": image_bytes
-                }
-            ]
-        )
-
-        await update.message.reply_text(response.text)
-
-        os.remove(path)
-
-    except Exception as e:
-        logging.exception("BOT ERROR")
-        await update.message.reply_text(
-            "❌ Bot error occurred.\n\n"
-            "Reason:\n"
-            f"{str(e)}"
-        )
-
-# =========================
+# ======================
 # MENU HANDLER
-# =========================
-async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+# ======================
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_text(message):
+
+    text = message.text
 
     if text == "📊 Analyze Chart":
-        await update.message.reply_text("Send a chart screenshot 📸")
+        bot.send_message(message.chat.id, "📸 Send a chart screenshot now")
 
     elif text == "📈 Market Bias":
-        await update.message.reply_text("Send symbol: XAUUSD / BTCUSD")
+        bot.send_message(message.chat.id, "Send a symbol like XAUUSD or BTCUSD")
 
     elif text == "💰 Risk Rules":
-        await update.message.reply_text(
-            "💰 Risk:\n- 1–2% risk\n- Always SL\n- Wait BOS/CHOCH"
+        bot.send_message(
+            message.chat.id,
+            "💰 Risk Rules:\n"
+            "- Risk 1–2%\n"
+            "- Always SL\n"
+            "- Avoid overtrading"
         )
 
     elif text == "🧠 SMC Guide":
-        await update.message.reply_text(
-            "SMC:\nBOS = continuation\nCHOCH = reversal\nLiquidity = stop hunts"
+        bot.send_message(
+            message.chat.id,
+            "🧠 SMC Basics:\n"
+            "- BOS = continuation\n"
+            "- CHOCH = reversal\n"
+            "- Liquidity = stop hunts"
         )
 
     else:
-        await update.message.reply_text("Use menu 👇", reply_markup=menu)
+        bot.send_message(message.chat.id, "Use the menu 👇", reply_markup=main_menu())
 
-# =========================
-# APP
-# =========================
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+# ======================
+# IMAGE HANDLER
+# ======================
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("help", help_cmd))
-app.add_handler(MessageHandler(filters.PHOTO, analyze_chart))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
+    try:
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
 
-print("🚀 Bot Running...")
-app.run_polling()
+        image_path = "chart.jpg"
+
+        with open(image_path, "wb") as f:
+            f.write(downloaded_file)
+
+        image = Image.open(image_path)
+
+        caption = message.caption or "Analyze this trading chart"
+
+        prompt = f"""
+You are a Smart Money Concept (SMC) trading analyst.
+
+Analyze the chart:
+
+- Trend direction
+- Market structure (BOS / CHOCH)
+- Liquidity zones
+- Entry point
+- Stop loss
+- Take profit
+- Risk warning
+
+User request:
+{caption}
+
+Do NOT guarantee profits.
+"""
+
+        # FIXED MODEL NAME (important)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=[prompt, image]
+        )
+
+        bot.reply_to(message, response.text)
+
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error:\n{str(e)}")
+
+# ======================
+# RUN BOT
+# ======================
+print("🚀 Bot is running...")
+bot.infinity_polling()
