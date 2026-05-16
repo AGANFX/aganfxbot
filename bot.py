@@ -1,186 +1,75 @@
-import telebot
-from telebot import types
-import requests
-import base64
 import os
-from PIL import Image
-from dotenv import load_dotenv
+from flask import Flask, request
+import telebot
 
-# =========================
-# LOAD ENV
-# =========================
-load_dotenv()
-
+# ======================
+# ENV (Railway or local .env)
+# ======================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # example: -100xxxxxxxxxx
 
 if not BOT_TOKEN:
     raise Exception("BOT_TOKEN missing")
 
 bot = telebot.TeleBot(BOT_TOKEN)
+app = Flask(__name__)
 
-# =========================
-# START MENU
-# =========================
-@bot.message_handler(commands=['start'])
-def start(message):
+# ======================
+# HOME ROUTE (Railway check)
+# ======================
+@app.route('/')
+def home():
+    return "AMUDANCE FX SIGNAL BOT RUNNING ✅"
 
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+# ======================
+# TRADINGVIEW WEBHOOK
+# ======================
+@app.route('/webhook', methods=['POST'])
+def webhook():
 
-    markup.add(
-        types.KeyboardButton("📊 Analyze Chart"),
-        types.KeyboardButton("📚 Guide")
-    )
+    data = request.json
 
-    bot.send_message(
-        message.chat.id,
-        f"""
-🔥 AMUDANCE FX AI PRO ENGINE 🔥
-
-Welcome {message.from_user.first_name}
-
-📸 Send a chart screenshot
-🧠 AI will analyze market structure
-📊 No random signals
-
-Ready.
-""",
-        reply_markup=markup
-    )
-
-# =========================
-# GUIDE
-# =========================
-@bot.message_handler(func=lambda m: m.text == "📚 Guide")
-def guide(m):
-    bot.send_message(
-        m.chat.id,
-        """
-📊 HOW TO USE
-
-1. Send MT5 / TradingView screenshot
-2. Wait for AI analysis
-3. Get:
-   - Trend direction
-   - Structure
-   - Entry zone
-   - SL / TP
-   - Confidence
-"""
-    )
-
-# =========================
-# IMAGE HANDLER (REAL AI CORE)
-# =========================
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-
-    loading = bot.send_message(message.chat.id, "🧠 AI analyzing chart...")
+    if not data:
+        return "No data", 400
 
     try:
-        # download image
-        file_info = bot.get_file(message.photo[-1].file_id)
-        file = bot.download_file(file_info.file_path)
+        pair = data.get("pair", "UNKNOWN")
+        signal = data.get("signal", "NO SIGNAL")
+        entry = data.get("entry", "N/A")
+        sl = data.get("sl", "N/A")
+        tp = data.get("tp", "N/A")
+        timeframe = data.get("timeframe", "M15")
+        confidence = data.get("confidence", "60%")
 
-        path = "chart.jpg"
-        with open(path, "wb") as f:
-            f.write(file)
+        message = f"""
+🔥 AMUDANCE FX SIGNAL 🔥
 
-        # compress
-        img = Image.open(path)
-        img.save(path, optimize=True, quality=60)
+📊 PAIR: {pair}
+⏱ TIMEFRAME: {timeframe}
 
-        # convert to base64
-        with open(path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode()
+💡 SIGNAL: {signal}
 
-        # =========================
-        # REAL AI ANALYSIS PROMPT
-        # =========================
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
+📍 ENTRY: {entry}
+🛑 SL: {sl}
+🎯 TP: {tp}
 
-        payload = {
-            "model": "openai/gpt-4.1-mini",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": """
-You are a professional Smart Money Concept trader.
-
-Analyze this chart and give:
-
-1. Market Trend (Bullish / Bearish / Range)
-2. Market Structure (BOS / CHoCH if visible)
-3. Liquidity zones
-4. Best entry zone
-5. Stop loss level
-6. Take profit levels (1:2 minimum RR)
-7. Confidence score (0-100%)
-8. Short reasoning
-
-IMPORTANT:
-- Do NOT repeat templates
-- Every chart must be unique analysis
-- Be precise like institutional trader
-"""
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{img_b64}"
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=90
-        )
-
-        data = r.json()
-
-        if "choices" not in data:
-            raise Exception(str(data))
-
-        result = data["choices"][0]["message"]["content"]
-
-        final = f"""
-🔥 AMUDANCE FX AI SIGNAL 🔥
-
-{result}
+📊 CONFIDENCE: {confidence}
 
 ━━━━━━━━━━━━━━━
-⚡ AI Vision Engine Active
-🧠 No Random Logic
-📊 Real Chart Interpretation
+⚡ Powered by TradingView Engine
+🛡 No AI Delay System
 """
 
-        bot.edit_message_text(
-            final,
-            message.chat.id,
-            loading.message_id
-        )
+        bot.send_message(CHANNEL_ID, message)
+
+        return "OK", 200
 
     except Exception as e:
-        bot.edit_message_text(
-            f"❌ AI Error:\n{e}",
-            message.chat.id,
-            loading.message_id
-        )
+        return str(e), 500
 
-# =========================
-# RUN BOT
-# =========================
-print("AMUDANCE FX AI VISION ENGINE RUNNING...")
-bot.infinity_polling(timeout=30, long_polling_timeout=30)
+# ======================
+# START SERVER
+# ======================
+if __name__ == "__main__":
+    print("AMUDANCE FX SIGNAL BOT RUNNING...")
+    app.run(host="0.0.0.0", port=8080)
