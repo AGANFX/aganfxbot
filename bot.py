@@ -5,8 +5,6 @@ import base64
 import os
 from PIL import Image
 from dotenv import load_dotenv
-from datetime import datetime
-import random
 
 # =========================
 # LOAD ENV
@@ -15,7 +13,6 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-SIGNAL_CHANNEL = os.getenv("SIGNAL_CHANNEL")
 
 if not BOT_TOKEN:
     raise Exception("BOT_TOKEN missing")
@@ -23,84 +20,7 @@ if not BOT_TOKEN:
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # =========================
-# SESSION ENGINE
-# =========================
-def get_session():
-    hour = datetime.utcnow().hour
-    if 7 <= hour < 12:
-        return "LONDON SESSION 🏦"
-    elif 12 <= hour < 17:
-        return "NEW YORK SESSION 🗽"
-    else:
-        return "ASIAN SESSION 🌏"
-
-# =========================
-# SMART STRUCTURE ENGINE (NO RANDOM SIGNALS)
-# =========================
-def strategy_engine():
-    session = get_session()
-
-    return {
-        "session": session,
-        "trend": "STRUCTURE BASED ANALYSIS 📊",
-        "signal": "WAIT FOR CONFIRMATION ⚠",
-        "entry": "Liquidity + BOS confirmation required",
-        "sl": "Below/Above structure",
-        "tp": "1:2 - 1:3 RR",
-        "liquidity": "Both sides being targeted",
-        "confidence": "60% - 75%"
-    }
-
-# =========================
-# AI ENGINE (OPTIONAL)
-# =========================
-def ai_engine(image_b64):
-    if not OPENROUTER_API_KEY:
-        return None
-
-    try:
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "model": "openai/gpt-4.1-mini",
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Analyze chart: trend, liquidity, structure, entry."
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_b64}"
-                        }
-                    }
-                ]
-            }]
-        }
-
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-
-        data = r.json()
-        if "choices" in data:
-            return data["choices"][0]["message"]["content"]
-
-    except:
-        pass
-
-    return None
-
-# =========================
-# TELEGRAM START MENU
+# START MENU
 # =========================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -109,75 +29,56 @@ def start(message):
 
     markup.add(
         types.KeyboardButton("📊 Analyze Chart"),
-        types.KeyboardButton("📚 Strategy")
-    )
-    markup.add(
-        types.KeyboardButton("💎 Status"),
-        types.KeyboardButton("📞 Support")
+        types.KeyboardButton("📚 Guide")
     )
 
     bot.send_message(
         message.chat.id,
         f"""
-🔥 AMUDANCE FX AI PRO SIGNAL SYSTEM 🔥
+🔥 AMUDANCE FX AI PRO ENGINE 🔥
 
 Welcome {message.from_user.first_name}
 
-🧠 Hybrid AI: ACTIVE
-📊 Structure Engine: ACTIVE
-📢 Auto Channel: ACTIVE
+📸 Send a chart screenshot
+🧠 AI will analyze market structure
+📊 No random signals
 
-Send chart screenshot 📸
+Ready.
 """,
         reply_markup=markup
     )
 
 # =========================
-# MENU
+# GUIDE
 # =========================
-@bot.message_handler(func=lambda m: True)
-def menu(m):
-
-    if m.text == "📚 Strategy":
-        bot.send_message(m.chat.id,
+@bot.message_handler(func=lambda m: m.text == "📚 Guide")
+def guide(m):
+    bot.send_message(
+        m.chat.id,
         """
-📊 STRATEGY ENGINE
+📊 HOW TO USE
 
-✔ Market Structure (BOS / MSS)
-✔ Liquidity Zones
-✔ Risk Management 1:2+
-✔ Session Awareness
-
-⚡ No Random Signals
-""")
-
-    elif m.text == "💎 Status":
-        bot.send_message(m.chat.id,
-        """
-🟢 SYSTEM STATUS
-
-AI: READY
-Strategy: ACTIVE
-Channel Posting: ACTIVE
-Fallback: ENABLED
-""")
-
-    elif m.text == "📞 Support":
-        bot.send_message(m.chat.id,
-        "AMUDANCE FX SYSTEM v2 ACTIVE")
-
-    elif m.text == "📊 Analyze Chart":
-        bot.send_message(m.chat.id, "Send your chart screenshot 📸")
+1. Send MT5 / TradingView screenshot
+2. Wait for AI analysis
+3. Get:
+   - Trend direction
+   - Structure
+   - Entry zone
+   - SL / TP
+   - Confidence
+"""
+    )
 
 # =========================
-# IMAGE HANDLER
+# IMAGE HANDLER (REAL AI CORE)
 # =========================
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
 
-    msg = bot.send_message(message.chat.id, "🧠 Analyzing chart...")
+    loading = bot.send_message(message.chat.id, "🧠 AI analyzing chart...")
 
     try:
+        # download image
         file_info = bot.get_file(message.photo[-1].file_id)
         file = bot.download_file(file_info.file_path)
 
@@ -185,65 +86,101 @@ def handle_photo(message):
         with open(path, "wb") as f:
             f.write(file)
 
+        # compress
         img = Image.open(path)
         img.save(path, optimize=True, quality=60)
 
+        # convert to base64
         with open(path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
 
-        strat = strategy_engine()
-        ai = ai_engine(img_b64)
+        # =========================
+        # REAL AI ANALYSIS PROMPT
+        # =========================
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
 
-        result = f"""
+        payload = {
+            "model": "openai/gpt-4.1-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": """
+You are a professional Smart Money Concept trader.
+
+Analyze this chart and give:
+
+1. Market Trend (Bullish / Bearish / Range)
+2. Market Structure (BOS / CHoCH if visible)
+3. Liquidity zones
+4. Best entry zone
+5. Stop loss level
+6. Take profit levels (1:2 minimum RR)
+7. Confidence score (0-100%)
+8. Short reasoning
+
+IMPORTANT:
+- Do NOT repeat templates
+- Every chart must be unique analysis
+- Be precise like institutional trader
+"""
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{img_b64}"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        r = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=90
+        )
+
+        data = r.json()
+
+        if "choices" not in data:
+            raise Exception(str(data))
+
+        result = data["choices"][0]["message"]["content"]
+
+        final = f"""
 🔥 AMUDANCE FX AI SIGNAL 🔥
 
-🕒 SESSION
-{strat['session']}
-
-📊 TREND
-{strat['trend']}
-
-💡 SIGNAL
-{strat['signal']}
-
-📍 ENTRY
-{strat['entry']}
-
-🛑 SL
-{strat['sl']}
-
-🎯 TP
-{strat['tp']}
-
-💧 LIQUIDITY
-{strat['liquidity']}
-
-📊 CONFIDENCE
-{strat['confidence']}
-
-🧠 AI INSIGHT
-{ai if ai else "AI unavailable → fallback active"}
+{result}
 
 ━━━━━━━━━━━━━━━
-⚡ PRO SYSTEM v2
+⚡ AI Vision Engine Active
+🧠 No Random Logic
+📊 Real Chart Interpretation
 """
 
-        bot.edit_message_text(result, message.chat.id, msg.message_id)
-
-        # =========================
-        # AUTO POST TO CHANNEL
-        # =========================
-        if SIGNAL_CHANNEL:
-            try:
-                bot.send_message(SIGNAL_CHANNEL, result)
-            except:
-                pass
+        bot.edit_message_text(
+            final,
+            message.chat.id,
+            loading.message_id
+        )
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"Error: {e}")
+        bot.edit_message_text(
+            f"❌ AI Error:\n{e}",
+            message.chat.id,
+            loading.message_id
+        )
 
 # =========================
 # RUN BOT
 # =========================
-print("AMUDANCE FX PRO SYSTEM RUNNING...")
+print("AMUDANCE FX AI VISION ENGINE RUNNING...")
 bot.infinity_polling(timeout=30, long_polling_timeout=30)
